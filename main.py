@@ -139,6 +139,41 @@ def read_keywords_from_file(file_path):
     return keywords
 
 
+def initialize_reddit():
+    # Reddit API credentials
+    client_id = os.environ.get('REDDIT_CLIENT_ID')
+    client_secret = os.environ.get('REDDIT_CLIENT_SECRET')
+    user_agent = 'script:news-aggregator:v1.0 (by u/denverdino)'
+
+    # Initialize PRAW with your credentials
+    reddit = praw.Reddit(client_id=client_id,
+                         client_secret=client_secret,
+                         user_agent=user_agent)
+    return reddit
+
+def fetch_posts_from_reddit(reddit):
+    result = []
+    # The subreddit you want to search in, keyword, and the time frame
+    subreddit_name = 'kubernetes+LocalLLaMA'  # e.g., 'python'
+
+    # Initialize a subreddit instance
+    subreddit = reddit.subreddit(subreddit_name)
+
+    # Calculate 24 hours ago
+    one_day_ago = datetime.utcnow() - timedelta(days=1)
+
+    # Regular expression to match image file extensions
+    image_pattern = re.compile(r'\.(jpg|jpeg|png|gif)$', re.IGNORECASE)
+
+    # Fetch new link posts in the last 24 hours
+    for submission in subreddit.new(limit=200):
+        post_time = datetime.utcfromtimestamp(submission.created_utc)
+        if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
+            # Check if the URL is an image or a relative link
+            if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
+                result.append(submission)
+
+
 def send_html_email(subject, html_content, to_email):
     # Your Gmail credentials
     gmail_user = 'test.denverdino@gmail.com'
@@ -180,8 +215,21 @@ if __name__ == "__main__":
         logging.error(f"Error reading file: {e}")
         exit(1)
 
-    hits = fetch_stories_with_keywords(keywords, 1)
-    for item in hits:
+    items = fetch_stories_with_keywords(keywords, 1)
+    for item in items:
+        url = item['url']
+        item['summary'] = ""
+        print(f"Title: {item['title']}\nURL: {url}")
+        try:
+            summary = generate_summary_with_cache(url, cache_path=cache_path)
+            print(f"Summary: {summary}\n")
+            item['summary'] = summary
+        except Exception as e:
+            logging.error(f"Error fetching content: {e}")
+
+    reddit = initialize_reddit()
+    items = fetch_posts_from_reddit(reddit)
+    for item in items:
         url = item['url']
         item['summary'] = ""
         print(f"Title: {item['title']}\nURL: {url}")
