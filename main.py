@@ -6,13 +6,15 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 import hashlib
 from openai import AzureOpenAI
-import os
 import trafilatura
 import html
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
+import praw
+from datetime import datetime, timedelta
+import re
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
@@ -37,6 +39,10 @@ def generate_summary(text, model="gpt-35-turbo", temperature=0.7, max_tokens=100
     Returns:
     - str: The generated summary.
     """
+
+    if text == "":
+        return ""
+
     client = AzureOpenAI(
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         api_key=os.getenv("OPENAI_API_KEY"),
@@ -89,11 +95,14 @@ def generate_summary_with_cache(url, cache_path, max_characters=3000):
 
 def extract_content(url):
     # The URL you want to extract information from
-    # url = 'https://www.theregister.com/2024/03/28/databricks_dbrx_llm/'
-    downloaded = trafilatura.fetch_url(url)
-    if downloaded is None:
-        return ""
-    text = trafilatura.extract(downloaded)
+    text = ""
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded is None:
+            text = trafilatura.extract(downloaded)
+    except Exception as e:
+        logging.error(
+            "Error fetching content for url '%s': %s", url, e)
     return text
 
 
@@ -151,8 +160,9 @@ def initialize_reddit():
                          user_agent=user_agent)
     return reddit
 
+
 def fetch_posts_from_reddit(reddit):
-    result = []
+    results = []
     # The subreddit you want to search in, keyword, and the time frame
     subreddit_name = 'kubernetes+LocalLLaMA'  # e.g., 'python'
 
@@ -171,7 +181,11 @@ def fetch_posts_from_reddit(reddit):
         if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
             # Check if the URL is an image or a relative link
             if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
-                result.append(submission)
+                results.append({
+                    "url": submission.url,
+                    "title": submission.title
+                })
+    return results
 
 
 def send_html_email(subject, html_content, to_email):
@@ -215,6 +229,7 @@ if __name__ == "__main__":
         logging.error(f"Error reading file: {e}")
         exit(1)
 
+    aggregated_items = []
     items = fetch_stories_with_keywords(keywords, 1)
     for item in items:
         url = item['url']
@@ -227,9 +242,11 @@ if __name__ == "__main__":
         except Exception as e:
             logging.error(f"Error fetching content: {e}")
 
+    aggregated_items += items
+
     reddit = initialize_reddit()
-    items = fetch_posts_from_reddit(reddit)
-    for item in items:
+    items2 = fetch_posts_from_reddit(reddit)
+    for item in items2:
         url = item['url']
         item['summary'] = ""
         print(f"Title: {item['title']}\nURL: {url}")
@@ -239,6 +256,8 @@ if __name__ == "__main__":
             item['summary'] = summary
         except Exception as e:
             logging.error(f"Error fetching content: {e}")
+
+    aggregated_items += items2
 
     # Base HTML template before the list
     html_content = """
@@ -292,7 +311,7 @@ if __name__ == "__main__":
     """
 
     # Append each news item to the HTML content, with HTML encoding
-    for item in hits:
+    for item in aggregated_items:
         title_encoded = html.escape(item["title"])
         summary_encoded = html.escape(item["summary"])
         html_content += f"""
