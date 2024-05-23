@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import hashlib
-from openai import AzureOpenAI
+from openai import OpenAI, AzureOpenAI
 import trafilatura
 import html
 import smtplib
@@ -26,7 +26,7 @@ if not isinstance(log_level, int):
 logging.basicConfig(level=log_level)
 
 
-def generate_summary(text, model="gpt-35-turbo", temperature=0.7, max_tokens=100):
+def generate_summary(text, model="qwen-turbo", temperature=0.7, max_tokens=100):
     """
     Generates a summary for the given text using the specified model.
 
@@ -43,16 +43,22 @@ def generate_summary(text, model="gpt-35-turbo", temperature=0.7, max_tokens=100
     if text == "":
         return ""
 
-    client = AzureOpenAI(
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        api_version="2024-02-01"
+    # client = AzureOpenAI(
+    #     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    #     api_key=os.getenv("OPENAI_API_KEY"),
+    #     api_version="2024-02-01"
+    # )
+
+    client = OpenAI(
+        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 填写DashScope服务endpoint
     )
 
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": f"Summarize the following text:\n\n{text}"},
+            {"role": "system", "content": "You are a helpful assistant for news aggregation."},
+            {"role": "user", "content": f"Summarize the following text:\n\n{text}"},
         ],
         max_tokens=max_tokens
     )
@@ -60,7 +66,7 @@ def generate_summary(text, model="gpt-35-turbo", temperature=0.7, max_tokens=100
     return summary
 
 
-def generate_summary_with_cache(url, cache_path, max_characters=3000):
+def generate_summary_with_cache(url, cache_path, max_characters=3000):    
     # Create a hash of the story_id to distribute files into folders
     story_hash = hashlib.md5(url.encode()).hexdigest()
     # Take the first 2 characters for the folder name
@@ -99,7 +105,9 @@ def extract_content(url):
     try:
         downloaded = trafilatura.fetch_url(url)
         if not downloaded is None:
-            text = trafilatura.extract(downloaded)
+            result = trafilatura.extract(downloaded)
+            if not result is None:
+                text = result
     except Exception as e:
         logging.error(
             "Error fetching content for url '%s': %s", url, e)
@@ -240,7 +248,7 @@ if __name__ == "__main__":
             print(f"Summary: {summary}\n")
             item['summary'] = summary
         except Exception as e:
-            logging.error(f"Error fetching content: {e}")
+            logging.error(f"Error fetching content for {url}: {e}")
 
     aggregated_items += items
 
@@ -255,7 +263,7 @@ if __name__ == "__main__":
             print(f"Summary: {summary}\n")
             item['summary'] = summary
         except Exception as e:
-            logging.error(f"Error fetching content: {e}")
+            logging.error(f"Error fetching content for {url}: {e}")
 
     aggregated_items += items2
 
