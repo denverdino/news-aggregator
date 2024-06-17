@@ -15,6 +15,7 @@ import logging
 import praw
 from datetime import datetime, timedelta
 import re
+import feedparser
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
@@ -66,7 +67,7 @@ def generate_summary(text, model="qwen-turbo", temperature=0.7, max_tokens=100):
     return summary
 
 
-def generate_summary_with_cache(url, cache_path, max_characters=3000):    
+def generate_summary_with_cache(url, cache_path, max_characters=3000):
     # Create a hash of the story_id to distribute files into folders
     story_hash = hashlib.md5(url.encode()).hexdigest()
     # Take the first 2 characters for the folder name
@@ -144,16 +145,16 @@ def fetch_stories_with_keywords(keywords, days_ago):
     return aggregated_result
 
 
-def read_keywords_from_file(file_path):
-    keywords = []
+def read_lines_from_file(file_path):
+    lines = []
     try:
         with open(file_path, 'r') as file:
             for line in file:
-                keywords.append(line.strip())
+                lines.append(line.strip())
     except Exception as e:
         raise e
 
-    return keywords
+    return lines
 
 
 def initialize_reddit():
@@ -196,6 +197,46 @@ def fetch_posts_from_reddit(reddit):
     return results
 
 
+def get_posts_from_feeds(rss_url, current_datetime, delta, max_characters=1024):
+    feed = feedparser.parse(rss_url)
+
+    items = []
+
+    for entry in feed.entries:
+        post_title = entry.title
+        post_link = entry.link
+        post_date = entry.published_parsed
+        post_datetime = datetime(
+            post_date.tm_year, post_date.tm_mon, post_date.tm_mday,
+            post_date.tm_hour, post_date.tm_min, post_date.tm_sec
+        )
+
+        # Calculate the difference between the two dates
+        difference = abs(current_datetime - post_datetime)
+
+        if (difference > delta):
+            continue
+        
+        if entry.summary is None or entry.summary == "":
+            post_summary = ""
+        else:
+            post_summary = trafilatura.extract(entry.summary)
+            if post_summary is None:
+                post_summary = entry.summary
+            else:
+                post_summary = post_summary[:max_characters]
+        
+        
+        items.append({
+            "title": post_title,
+            "url": post_link,
+            "date": post_datetime.date(),
+            "summary": post_summary
+        })
+
+    return items
+
+
 def send_html_email(subject, html_content, to_email):
     # Your Gmail credentials
     gmail_user = 'test.denverdino@gmail.com'
@@ -215,7 +256,7 @@ def send_html_email(subject, html_content, to_email):
         # Send the email
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_password)
-            server.sendmail(gmail_user, to_email, msg.as_string())
+            server.sendmail(gmail_user, to_email.split(','), msg.as_string())
             logging.info("News email is sent successfully!")
     except Exception as e:
         logging.info(f"Failed to send HTML email: {e}")
@@ -224,15 +265,15 @@ def send_html_email(subject, html_content, to_email):
 if __name__ == "__main__":
     exec_path = os.path.abspath(__file__)
     exec_dir = os.path.dirname(exec_path)
-    file_path = os.path.join(exec_dir, "keywords.txt")
 
     # Create the cache directory if it doesn't exist
     cache_path = os.path.join(exec_dir, "cache")
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
+    keywords_file_path = os.path.join(exec_dir, "keywords.txt")
     try:
-        keywords = read_keywords_from_file(file_path)
+        keywords = read_lines_from_file(keywords_file_path)
     except Exception as e:
         logging.error(f"Error reading file: {e}")
         exit(1)
@@ -266,6 +307,18 @@ if __name__ == "__main__":
             logging.error(f"Error fetching content for {url}: {e}")
 
     aggregated_items += items2
+
+    feeds_file_path = os.path.join(exec_dir, "feeds.txt")
+    try:
+        feeds = read_lines_from_file(feeds_file_path)
+    except Exception as e:
+        logging.error(f"Error reading file: {e}")
+        exit(1)
+
+    current_date = datetime.now()
+    delta = timedelta(days=1)
+    for rss_url in feeds:
+        aggregated_items += get_posts_from_feeds(rss_url, current_date, delta)
 
     # Base HTML template before the list
     html_content = """
@@ -321,7 +374,7 @@ if __name__ == "__main__":
     # Append each news item to the HTML content, with HTML encoding
     for item in aggregated_items:
         title_encoded = html.escape(item["title"])
-        summary_encoded = html.escape(item["summary"])
+        summary_encoded = item["summary"]
         html_content += f"""
         <div class="news-item">
             <div class="news-title">
@@ -342,6 +395,6 @@ if __name__ == "__main__":
 </html>
     """
     logging.info(html_content)
-    to_email = "denverdino@gmail.com"
+    to_email = "denverdino@gmail.com,cu.eric.lee@gmail.com"
     subject = "Your Hacker News Digest"
     send_html_email(subject, html_content, to_email)
