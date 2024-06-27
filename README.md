@@ -1,6 +1,8 @@
 # News Aggregator
 
-This project uses the Hacker News and Reddit APIs to fetch the news and generates a summary of the news using OpenAI APIs.
+Aggregate your favorit news from Hacker News, Reddit and RSS feeds
+
+Modify the `config.yaml` file with your preferences.
 
 ```
 export GMAIL_PASSWORD=XXX XXX

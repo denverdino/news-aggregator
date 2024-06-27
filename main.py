@@ -16,6 +16,7 @@ import praw
 from datetime import datetime, timedelta
 import re
 import feedparser
+import yaml
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
@@ -25,6 +26,12 @@ if not isinstance(log_level, int):
 
 # Configure logging
 logging.basicConfig(level=log_level)
+
+def parse_yaml_config(file_path):
+    with open(file_path, 'r') as file:
+        config = yaml.safe_load(file)
+    
+    return config
 
 
 def generate_summary(text, model="qwen-turbo", temperature=0.7, max_tokens=100):
@@ -170,13 +177,13 @@ def initialize_reddit():
     return reddit
 
 
-def fetch_posts_from_reddit(reddit):
+def fetch_posts_from_reddit(reddit, subreddit_names):
     results = []
     # The subreddit you want to search in, keyword, and the time frame
-    subreddit_name = 'kubernetes+LocalLLaMA'  # e.g., 'python'
+    # 'kubernetes+LocalLLaMA'
 
     # Initialize a subreddit instance
-    subreddit = reddit.subreddit(subreddit_name)
+    subreddit = reddit.subreddit('+'.join(subreddit_names))
 
     # Calculate 24 hours ago
     one_day_ago = datetime.utcnow() - timedelta(days=1)
@@ -197,7 +204,7 @@ def fetch_posts_from_reddit(reddit):
     return results
 
 
-def get_posts_from_feeds(rss_url, current_datetime, delta, max_characters=1024):
+def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_characters=1024):
     feed = feedparser.parse(rss_url)
 
     items = []
@@ -217,6 +224,12 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, max_characters=1024):
         if (difference > delta):
             continue
         
+        # Check if the entry matches the specified category
+        if category and 'category' in entry:
+            entry_categories = [cat.lower() for cat in entry.category]
+            if category.lower() not in entry_categories:
+                continue
+
         if entry.summary is None or entry.summary == "":
             post_summary = ""
         else:
@@ -236,8 +249,7 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, max_characters=1024):
 
     return items
 
-
-def send_html_email(subject, html_content, to_email):
+def send_html_email(subject, html_content, emails):
     # Your Gmail credentials
     gmail_user = 'test.denverdino@gmail.com'
     gmail_password = os.getenv("GMAIL_PASSWORD")  # Use your app password here
@@ -246,7 +258,7 @@ def send_html_email(subject, html_content, to_email):
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = gmail_user
-    msg['To'] = to_email
+    msg['To'] = ','.join(emails)
 
     # Attach the HTML content
     part2 = MIMEText(html_content, 'html')
@@ -256,7 +268,7 @@ def send_html_email(subject, html_content, to_email):
         # Send the email
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_password)
-            server.sendmail(gmail_user, to_email.split(','), msg.as_string())
+            server.sendmail(gmail_user, emails, msg.as_string())
             logging.info("News email is sent successfully!")
     except Exception as e:
         logging.info(f"Failed to send HTML email: {e}")
@@ -271,13 +283,17 @@ if __name__ == "__main__":
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
-    keywords_file_path = os.path.join(exec_dir, "keywords.txt")
+    config_file_path = os.path.join(exec_dir, "config.yaml")
     try:
-        keywords = read_lines_from_file(keywords_file_path)
+        config = parse_yaml_config('config.yaml')
+        keywords = config['hackernews']
+        subreddit_names = config['reddit']
+        feeds = config['feeds']
+        emails = config['emails']
     except Exception as e:
-        logging.error(f"Error reading file: {e}")
+        logging.error(f"Error reading config file: {e}")
         exit(1)
-
+    
     aggregated_items = []
     items = fetch_stories_with_keywords(keywords, 1)
     for item in items:
@@ -294,7 +310,7 @@ if __name__ == "__main__":
     aggregated_items += items
 
     reddit = initialize_reddit()
-    items2 = fetch_posts_from_reddit(reddit)
+    items2 = fetch_posts_from_reddit(reddit, subreddit_names)
     for item in items2:
         url = item['url']
         item['summary'] = ""
@@ -308,16 +324,11 @@ if __name__ == "__main__":
 
     aggregated_items += items2
 
-    feeds_file_path = os.path.join(exec_dir, "feeds.txt")
-    try:
-        feeds = read_lines_from_file(feeds_file_path)
-    except Exception as e:
-        logging.error(f"Error reading file: {e}")
-        exit(1)
-
     current_date = datetime.now()
     delta = timedelta(days=1)
-    for rss_url in feeds:
+    for feed in feeds:
+        rss_url = feed['url']
+        category = feed.get('category')
         aggregated_items += get_posts_from_feeds(rss_url, current_date, delta)
 
     # Base HTML template before the list
@@ -395,6 +406,5 @@ if __name__ == "__main__":
 </html>
     """
     logging.info(html_content)
-    to_email = "denverdino@gmail.com,cu.eric.lee@gmail.com"
     subject = "Your Hacker News Digest"
-    send_html_email(subject, html_content, to_email)
+    send_html_email(subject, html_content, emails)
