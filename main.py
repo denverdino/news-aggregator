@@ -1,11 +1,9 @@
 import requests
-import json
 import os
-import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hashlib
-from openai import OpenAI, AzureOpenAI
+from openai import OpenAI
 import trafilatura
 import html
 import smtplib
@@ -13,13 +11,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 import praw
-from datetime import datetime, timedelta
 import re
 import feedparser
 import yaml
+import argparse
+
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
+
 # Validate the log_level
 if not isinstance(log_level, int):
     raise ValueError(f"Invalid log level: {log_level_name}")
@@ -27,10 +27,11 @@ if not isinstance(log_level, int):
 # Configure logging
 logging.basicConfig(level=log_level)
 
+
 def parse_yaml_config(file_path):
     with open(file_path, 'r') as file:
         config = yaml.safe_load(file)
-    
+
     return config
 
 
@@ -186,14 +187,15 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
     subreddit = reddit.subreddit('+'.join(subreddit_names))
 
     # Calculate 24 hours ago
-    one_day_ago = datetime.utcnow() - timedelta(days=1)
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
 
     # Regular expression to match image file extensions
     image_pattern = re.compile(r'\.(jpg|jpeg|png|gif)$', re.IGNORECASE)
 
     # Fetch new link posts in the last 24 hours
     for submission in subreddit.new(limit=200):
-        post_time = datetime.utcfromtimestamp(submission.created_utc)
+        post_time = datetime.fromtimestamp(
+            submission.created_utc, tz=timezone.utc)
         if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
             # Check if the URL is an image or a relative link
             if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
@@ -204,7 +206,7 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
     return results
 
 
-def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_characters=1024):
+def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywords=None, max_characters=1024):
     feed = feedparser.parse(rss_url)
 
     items = []
@@ -212,34 +214,44 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_ch
     for entry in feed.entries:
         post_title = entry.title
         post_link = entry.link
-        post_date = entry.published_parsed
-        post_datetime = datetime(
-            post_date.tm_year, post_date.tm_mon, post_date.tm_mday,
-            post_date.tm_hour, post_date.tm_min, post_date.tm_sec
-        )
+        post_date = entry.get('published_parsed', None)
+        if post_date is None:
+            post_datetime = datetime.now()
+        else:
+            post_datetime = datetime(
+                post_date.tm_year, post_date.tm_mon, post_date.tm_mday,
+                post_date.tm_hour, post_date.tm_min, post_date.tm_sec
+            )
 
         # Calculate the difference between the two dates
         difference = abs(current_datetime - post_datetime)
 
         if (difference > delta):
             continue
-        
+
         # Check if the entry matches the specified category
         if category and 'category' in entry:
-            entry_categories = [cat.lower() for cat in entry.category]
+            entry_categories = [tag.term.lower() for tag in entry.tags]
             if category.lower() not in entry_categories:
                 continue
 
-        if entry.summary is None or entry.summary == "":
+        summary = entry.get('summary', "")
+        if summary == "":
             post_summary = ""
         else:
-            post_summary = trafilatura.extract(entry.summary)
+            post_summary = trafilatura.extract(summary)
             if post_summary is None:
-                post_summary = entry.summary
+                post_summary = summary
             else:
                 post_summary = post_summary[:max_characters]
-        
-        
+
+        # Filter by keywords in the summary
+        if keywords:
+            if not any(re.search(r'\b' + re.escape(keyword) + r'\b', post_summary, re.IGNORECASE) for keyword in keywords):
+                continue
+
+        print(f"Title: {post_title}\nURL: {post_link}")
+
         items.append({
             "title": post_title,
             "url": post_link,
@@ -248,6 +260,7 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_ch
         })
 
     return items
+
 
 def send_html_email(subject, html_content, emails):
     # Your Gmail credentials
@@ -271,65 +284,84 @@ def send_html_email(subject, html_content, emails):
             server.sendmail(gmail_user, emails, msg.as_string())
             logging.info("News email is sent successfully!")
     except Exception as e:
-        logging.info(f"Failed to send HTML email: {e}")
+        logging.error(f"Failed to send HTML email: {e}")
 
 
 if __name__ == "__main__":
     exec_path = os.path.abspath(__file__)
     exec_dir = os.path.dirname(exec_path)
+    # get config file path from arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, help='Path to the config file')
+    config_file_path = parser.parse_args().config
+
+    if config_file_path is None:
+        config_file_path = os.path.join(exec_dir, "config.yaml")
 
     # Create the cache directory if it doesn't exist
     cache_path = os.path.join(exec_dir, "cache")
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
-    config_file_path = os.path.join(exec_dir, "config.yaml")
     try:
-        config = parse_yaml_config('config.yaml')
-        keywords = config['hackernews']
-        subreddit_names = config['reddit']
-        feeds = config['feeds']
+        config = parse_yaml_config(config_file_path)
+        keywords = config.get('hackernews')
+        subreddit_names = config.get('reddit')
+        feeds = config.get('feeds')
         emails = config['emails']
+        subject = config['subject']
     except Exception as e:
         logging.error(f"Error reading config file: {e}")
         exit(1)
-    
+
     aggregated_items = []
-    items = fetch_stories_with_keywords(keywords, 1)
-    for item in items:
-        url = item['url']
-        item['summary'] = ""
-        print(f"Title: {item['title']}\nURL: {url}")
-        try:
-            summary = generate_summary_with_cache(url, cache_path=cache_path)
-            print(f"Summary: {summary}\n")
-            item['summary'] = summary
-        except Exception as e:
-            logging.error(f"Error fetching content for {url}: {e}")
+    if keywords is not None:
+        items = fetch_stories_with_keywords(keywords, 1)
+        for item in items:
+            url = item['url']
+            item['summary'] = ""
+            print(f"Title: {item['title']}\nURL: {url}")
+            try:
+                summary = generate_summary_with_cache(
+                    url, cache_path=cache_path)
+                print(f"Summary: {summary}\n")
+                item['summary'] = summary
+            except Exception as e:
+                logging.error(f"Error fetching content for {url}: {e}")
 
-    aggregated_items += items
+        aggregated_items += items
 
-    reddit = initialize_reddit()
-    items2 = fetch_posts_from_reddit(reddit, subreddit_names)
-    for item in items2:
-        url = item['url']
-        item['summary'] = ""
-        print(f"Title: {item['title']}\nURL: {url}")
-        try:
-            summary = generate_summary_with_cache(url, cache_path=cache_path)
-            print(f"Summary: {summary}\n")
-            item['summary'] = summary
-        except Exception as e:
-            logging.error(f"Error fetching content for {url}: {e}")
+    if subreddit_names is not None:
+        reddit = initialize_reddit()
+        items2 = fetch_posts_from_reddit(reddit, subreddit_names)
+        for item in items2:
+            url = item['url']
+            item['summary'] = ""
+            print(f"Title: {item['title']}\nURL: {url}")
+            try:
+                summary = generate_summary_with_cache(
+                    url, cache_path=cache_path)
+                print(f"Summary: {summary}\n")
+                item['summary'] = summary
+            except Exception as e:
+                logging.error(f"Error fetching content for {url}: {e}")
 
-    aggregated_items += items2
+        aggregated_items += items2
 
-    current_date = datetime.now()
-    delta = timedelta(days=1)
-    for feed in feeds:
-        rss_url = feed['url']
-        category = feed.get('category')
-        aggregated_items += get_posts_from_feeds(rss_url, current_date, delta)
+    if feeds is not None:
+        current_date = datetime.now()
+        delta = timedelta(days=1)
+        for feed in feeds:
+            rss_url = feed['url']
+            category = feed.get('category')
+            keywords_string = feed.get('keywords')
+            if keywords_string is not None:
+                keywords = keywords_string.split(',')
+            else:
+                keywords = None
+            print(f"Fetching feed {rss_url} ...\n")
+            aggregated_items += get_posts_from_feeds(
+                rss_url, current_date, delta=delta, category=category, keywords=keywords)
 
     # Base HTML template before the list
     html_content = """
@@ -406,5 +438,4 @@ if __name__ == "__main__":
 </html>
     """
     logging.info(html_content)
-    subject = "Your Hacker News Digest"
     send_html_email(subject, html_content, emails)

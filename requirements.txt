@@ -1,0 +1,6 @@
+feedparser
+openai
+praw
+PyYAML
+Requests
+trafilatura

@@ -1,10 +1,27 @@
 hackernews:
   - Kubernetes
+  - K8s
+  - GKE
+  - EKS
+  - AKS
+  - Docker
 reddit:
   - Kubernetes
 feeds:
-  - 
+  -
+    url: https://kubernetes.io/feed.xml
+  -
     url: https://aws.amazon.com/blogs/containers/feed/
+  -
+    url: https://aws.amazon.com/blogs/machine-learning/category/compute/amazon-kubernetes-service/feed/
+  -
+    url: https://techcommunity.microsoft.com/plugins/custom/microsoft/o365/custom-blog-rss?tid=4303776677014973685&board=AppsonAzureBlog&size=25
+  -
+    url: https://cloudblog.withgoogle.com/rss/
+    category: Containers & Kubernetes
+  -
+    url: https://developer.nvidia.com/blog/feed
+    category: Kubernetes
+subject: Kubernetes News
 emails:
   - denverdino@gmail.com
-  - cu.eric.lee@gmail.com
