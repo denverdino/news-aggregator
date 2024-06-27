@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import hashlib
-from openai import OpenAI, AzureOpenAI
+#from openai import OpenAI, AzureOpenAI
 import trafilatura
 import html
 import smtplib
@@ -226,7 +226,7 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_ch
         
         # Check if the entry matches the specified category
         if category and 'category' in entry:
-            entry_categories = [cat.lower() for cat in entry.category]
+            entry_categories = [tag.term.lower() for tag in entry.tags]
             if category.lower() not in entry_categories:
                 continue
 
@@ -239,7 +239,8 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_ch
             else:
                 post_summary = post_summary[:max_characters]
         
-        
+        print(f"Title: {post_title}\nURL: {post_link}")
+
         items.append({
             "title": post_title,
             "url": post_link,
@@ -329,7 +330,8 @@ if __name__ == "__main__":
     for feed in feeds:
         rss_url = feed['url']
         category = feed.get('category')
-        aggregated_items += get_posts_from_feeds(rss_url, current_date, delta)
+        print(f"Fetching feed {rss_url} ...\n")
+        aggregated_items += get_posts_from_feeds(rss_url, current_date, delta=delta, category=category)
 
     # Base HTML template before the list
     html_content = """
