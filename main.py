@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import hashlib
-#from openai import OpenAI, AzureOpenAI
+from openai import OpenAI #, AzureOpenAI
 import trafilatura
 import html
 import smtplib
