@@ -332,7 +332,8 @@ if __name__ == "__main__":
                 item['summary'] = summary
             except Exception as e:
                 logging.error(f"Error fetching content for {url}: {e}")
-            aggregated_items += items2
+        
+        aggregated_items += items2
   
     if feeds is not None:
         current_date = datetime.now()
