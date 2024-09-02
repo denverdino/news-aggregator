@@ -283,6 +283,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, help='Path to the config file')
     config_file_path = parser.parse_args().config
+
     if config_file_path is None:
         config_file_path = os.path.join(exec_dir, "config.yaml")
 
@@ -291,12 +292,11 @@ if __name__ == "__main__":
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
-    
     try:
-        config = parse_yaml_config('config.yaml')
-        keywords = config['hackernews']
-        subreddit_names = config['reddit']
-        feeds = config['feeds']
+        config = parse_yaml_config(config_file_path)
+        keywords = config.get('hackernews')
+        subreddit_names = config.get('reddit')
+        feeds = config.get('feeds')
         emails = config['emails']
         subject = config['subject']
     except Exception as e:
@@ -304,42 +304,44 @@ if __name__ == "__main__":
         exit(1)
     
     aggregated_items = []
-    items = fetch_stories_with_keywords(keywords, 1)
-    for item in items:
-        url = item['url']
-        item['summary'] = ""
-        print(f"Title: {item['title']}\nURL: {url}")
-        try:
-            summary = generate_summary_with_cache(url, cache_path=cache_path)
-            print(f"Summary: {summary}\n")
-            item['summary'] = summary
-        except Exception as e:
-            logging.error(f"Error fetching content for {url}: {e}")
+    if keywords is not None:
+        items = fetch_stories_with_keywords(keywords, 1)
+        for item in items:
+            url = item['url']
+            item['summary'] = ""
+            print(f"Title: {item['title']}\nURL: {url}")
+            try:
+                summary = generate_summary_with_cache(url, cache_path=cache_path)
+                print(f"Summary: {summary}\n")
+                item['summary'] = summary
+            except Exception as e:
+                logging.error(f"Error fetching content for {url}: {e}")
 
-    aggregated_items += items
+        aggregated_items += items
 
-    reddit = initialize_reddit()
-    items2 = fetch_posts_from_reddit(reddit, subreddit_names)
-    for item in items2:
-        url = item['url']
-        item['summary'] = ""
-        print(f"Title: {item['title']}\nURL: {url}")
-        try:
-            summary = generate_summary_with_cache(url, cache_path=cache_path)
-            print(f"Summary: {summary}\n")
-            item['summary'] = summary
-        except Exception as e:
-            logging.error(f"Error fetching content for {url}: {e}")
-
-    aggregated_items += items2
-
-    current_date = datetime.now()
-    delta = timedelta(days=1)
-    for feed in feeds:
-        rss_url = feed['url']
-        category = feed.get('category')
-        print(f"Fetching feed {rss_url} ...\n")
-        aggregated_items += get_posts_from_feeds(rss_url, current_date, delta=delta, category=category)
+    if subreddit_names is not None:
+        reddit = initialize_reddit()
+        items2 = fetch_posts_from_reddit(reddit, subreddit_names)
+        for item in items2:
+            url = item['url']
+            item['summary'] = ""
+            print(f"Title: {item['title']}\nURL: {url}")
+            try:
+                summary = generate_summary_with_cache(url, cache_path=cache_path)
+                print(f"Summary: {summary}\n")
+                item['summary'] = summary
+            except Exception as e:
+                logging.error(f"Error fetching content for {url}: {e}")
+            aggregated_items += items2
+  
+    if feeds is not None:
+        current_date = datetime.now()
+        delta = timedelta(days=1)
+        for feed in feeds:
+            rss_url = feed['url']
+            category = feed.get('category')
+            print(f"Fetching feed {rss_url} ...\n")
+            aggregated_items += get_posts_from_feeds(rss_url, current_date, delta=delta, category=category)
 
     # Base HTML template before the list
     html_content = """
