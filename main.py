@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import re
 import feedparser
 import yaml
+import argparse
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
@@ -278,19 +279,26 @@ def send_html_email(subject, html_content, emails):
 if __name__ == "__main__":
     exec_path = os.path.abspath(__file__)
     exec_dir = os.path.dirname(exec_path)
+    # get config file path from arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, help='Path to the config file')
+    config_file_path = parser.parse_args().config
+    if config_file_path is None:
+        config_file_path = os.path.join(exec_dir, "config.yaml")
 
     # Create the cache directory if it doesn't exist
     cache_path = os.path.join(exec_dir, "cache")
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
-    config_file_path = os.path.join(exec_dir, "config.yaml")
+    
     try:
         config = parse_yaml_config('config.yaml')
         keywords = config['hackernews']
         subreddit_names = config['reddit']
         feeds = config['feeds']
         emails = config['emails']
+        subject = config['subject']
     except Exception as e:
         logging.error(f"Error reading config file: {e}")
         exit(1)
@@ -408,5 +416,4 @@ if __name__ == "__main__":
 </html>
     """
     logging.info(html_content)
-    subject = "Your Hacker News Digest"
     send_html_email(subject, html_content, emails)
