@@ -19,6 +19,9 @@ feeds:
   -
     url: https://cloudblog.withgoogle.com/rss/
     category: Containers & Kubernetes
+  -
+    url: https://developer.nvidia.com/blog/feed
+    category: Kubernetes
 subject: Kubernetes News
 emails:
   - denverdino@gmail.com

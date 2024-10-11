@@ -2,7 +2,7 @@ import requests
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hashlib
 from openai import OpenAI #, AzureOpenAI
@@ -18,9 +18,12 @@ import re
 import feedparser
 import yaml
 import argparse
+import re
+
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
 log_level = logging.getLevelName(log_level_name)
+
 # Validate the log_level
 if not isinstance(log_level, int):
     raise ValueError(f"Invalid log level: {log_level_name}")
@@ -178,6 +181,7 @@ def initialize_reddit():
     return reddit
 
 
+
 def fetch_posts_from_reddit(reddit, subreddit_names):
     results = []
     # The subreddit you want to search in, keyword, and the time frame
@@ -187,14 +191,14 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
     subreddit = reddit.subreddit('+'.join(subreddit_names))
 
     # Calculate 24 hours ago
-    one_day_ago = datetime.utcnow() - timedelta(days=1)
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
 
     # Regular expression to match image file extensions
     image_pattern = re.compile(r'\.(jpg|jpeg|png|gif)$', re.IGNORECASE)
 
     # Fetch new link posts in the last 24 hours
     for submission in subreddit.new(limit=200):
-        post_time = datetime.utcfromtimestamp(submission.created_utc)
+        post_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
         if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
             # Check if the URL is an image or a relative link
             if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
@@ -204,8 +208,7 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
                 })
     return results
 
-
-def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_characters=1024):
+def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywords=None, max_characters=1024):
     feed = feedparser.parse(rss_url)
 
     items = []
@@ -234,12 +237,17 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, max_ch
         if entry.summary is None or entry.summary == "":
             post_summary = ""
         else:
-            post_summary = trafilatura.extract(entry.summary)
+            post_summary = trafilatura.extract(entry.summary)            
             if post_summary is None:
                 post_summary = entry.summary
             else:
                 post_summary = post_summary[:max_characters]
         
+        # Filter by keywords in the summary
+        if keywords:
+            if not any(re.search(r'\b' + re.escape(keyword) + r'\b', post_summary, re.IGNORECASE) for keyword in keywords):
+                continue
+
         print(f"Title: {post_title}\nURL: {post_link}")
 
         items.append({
@@ -341,8 +349,13 @@ if __name__ == "__main__":
         for feed in feeds:
             rss_url = feed['url']
             category = feed.get('category')
+            keywords_string = feed.get('keywords')
+            if keywords_string is not None:
+                keywords = keywords_string.split(',')
+            else:
+                keywords = None
             print(f"Fetching feed {rss_url} ...\n")
-            aggregated_items += get_posts_from_feeds(rss_url, current_date, delta=delta, category=category)
+            aggregated_items += get_posts_from_feeds(rss_url, current_date, delta=delta, category=category, keywords=keywords)
 
     # Base HTML template before the list
     html_content = """
