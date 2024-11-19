@@ -1,7 +1,5 @@
 import requests
-import json
 import os
-import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hashlib
@@ -18,7 +16,6 @@ import re
 import feedparser
 import yaml
 import argparse
-import re
 
 
 log_level_name = os.getenv('LOG_LEVEL', 'WARNING').upper()
