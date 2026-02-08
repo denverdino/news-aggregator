@@ -109,14 +109,15 @@ def generate_summary_with_cache(url, cache_path, max_characters=3000):
 
 
 def extract_content(url):
-    # The URL you want to extract information from
     text = ""
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded is None:
-            result = trafilatura.extract(downloaded)
-            if not result is None:
-                text = result
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        downloaded = response.text
+
+        result = trafilatura.extract(downloaded)
+        if result is not None:
+            text = result
     except Exception as e:
         logging.error(
             "Error fetching content for url '%s': %s", url, e)
