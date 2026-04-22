@@ -1,0 +1,32 @@
+# Configuration for agent application development infrastructure data sources
+# This YAML defines sources the news-aggregator tool should monitor for
+# updates about agent runtimes, sandbox environments and best practices.
+hackernews:
+  # Monitor Hacker News for posts about these topics related to agent infrastructure
+  - Anthropic engineering
+  - Google Agent
+  - AWS Agent
+  - Claude Agent
+  - E2B sandbox
+  - Agent Sandbox
+  - OpenAI Agent
+
+reddit:
+  # Subreddits with active discussions about AI agents and agentic infrastructures
+  - AI_Agents        # community discussing AI agents and tools
+  - aiagents         # another community focused on AI agents
+
+feeds:
+  # Blogs and documentation sites that publish updates about agent platforms
+  - 
+    url: https://www.anthropic.com/engineering
+  - 
+    url: https://jimmysong.io/blog/index.xml
+  - 
+    url: https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_engineering.xml
+  - 
+    url: https://openai.com/news/rss.xml
+subject: AI Agent News
+emails:
+  # List of email addresses that should receive the daily digest (update as needed)
+  - denverdino@gmail.com
