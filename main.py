@@ -1,5 +1,6 @@
-import requests
+from curl_cffi.requests import Session as CffiSession
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hashlib
@@ -26,6 +27,9 @@ if not isinstance(log_level, int):
 
 # Configure logging
 logging.basicConfig(level=log_level)
+
+# Create a session with browser TLS fingerprint to avoid 403 Forbidden errors
+session = CffiSession(impersonate="chrome")
 
 
 def parse_yaml_config(file_path):
@@ -110,17 +114,29 @@ def generate_summary_with_cache(url, cache_path, max_characters=3000):
 
 def extract_content(url):
     text = ""
+    downloaded = None
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        downloaded = response.text
-
-        result = trafilatura.extract(downloaded)
-        if result is not None:
-            text = result
+        response = session.get(url, timeout=20)
+        if response.ok:
+            downloaded = response.text
+        else:
+            logging.warning(
+                "HTTP %d for '%s', trying trafilatura fallback",
+                response.status_code, url)
+            downloaded = trafilatura.fetch_url(url)
     except Exception as e:
         logging.error(
             "Error fetching content for url '%s': %s", url, e)
+        return text
+
+    try:
+        if downloaded:
+            result = trafilatura.extract(downloaded)
+            if result is not None:
+                text = result
+    except Exception as e:
+        logging.error(
+            "Error extracting content for url '%s': %s", url, e)
     return text
 
 
@@ -137,8 +153,12 @@ def fetch_stories_with_keywords(keywords, days_ago):
         logging.info("Requesting URL: %s", request_url)
 
         try:
-            response = requests.get(request_url)
-            response.raise_for_status()
+            response = session.get(request_url, timeout=20)
+            if not response.ok:
+                logging.error(
+                    "HTTP %d fetching stories for keyword '%s'",
+                    response.status_code, keyword)
+                continue
             result = response.json()
 
             for hit in result['hits']:
@@ -329,6 +349,7 @@ if __name__ == "__main__":
                 item['summary'] = summary
             except Exception as e:
                 logging.error(f"Error fetching content for {url}: {e}")
+            time.sleep(1)
 
         aggregated_items += items
 
@@ -346,6 +367,7 @@ if __name__ == "__main__":
                 item['summary'] = summary
             except Exception as e:
                 logging.error(f"Error fetching content for {url}: {e}")
+            time.sleep(1)
 
         aggregated_items += items2
 

@@ -1,3 +1,4 @@
+curl_cffi
 feedparser
 openai
 praw
