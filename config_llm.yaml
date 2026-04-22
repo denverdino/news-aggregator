@@ -1,0 +1,14 @@
+hackernews:
+  - Ray framework
+  - LLM
+  - AI infrastructure
+  - Huggingface
+reddit:
+  - LocalLLaMA
+feeds:
+  -
+    url: https://aws.amazon.com/cn/blogs/china/feed/
+    category: Artificial Intelligence
+subject: LLM  News
+emails:
+  - denverdino@gmail.com

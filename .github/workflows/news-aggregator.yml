@@ -1,0 +1,36 @@
+name: News Aggregator
+
+on:
+  schedule:
+    # Beijing 9:00 AM = UTC 1:00 AM
+    - cron: '0 1 * * *'
+    # Beijing 9:00 PM = UTC 1:00 PM
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run with default config
+        env:
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          TZ: Asia/Shanghai
+        run: |
+          python3 main.py
+          python3 main.py --config config_llm.yaml
