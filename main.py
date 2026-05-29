@@ -39,7 +39,7 @@ def parse_yaml_config(file_path):
     return config
 
 
-def generate_summary(text, model="qwen-turbo", temperature=0.7, max_tokens=100):
+def generate_summary(text, model="qwen3.6-flash", temperature=0, max_tokens=100):
     """
     Generates a summary for the given text using the specified model.
 
