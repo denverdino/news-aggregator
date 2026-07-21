@@ -45,7 +45,7 @@ def generate_summary(text, model="qwen3.6-flash", temperature=0, max_tokens=100)
 
     Parameters:
     - text (str): The text to summarize.
-    - model (str): The model to use for summarization. Default is "gpt-35-turbo".
+    - model (str): The model to use for summarization. Default is "qwen3.6-flash".
     - temperature (float): Controls randomness in the output. Lower values mean less random outputs.
     - max_tokens (int): The maximum number of tokens to generate in the output.
 
@@ -70,10 +70,24 @@ def generate_summary(text, model="qwen3.6-flash", temperature=0, max_tokens=100)
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You are a helpful assistant for news aggregation."},
-            {"role": "user", "content": f"Summarize the following text:\n\n{text}"},
+            {
+                "role": "system",
+                "content": (
+                    "You write summaries for a plain-text news digest. "
+                    "Return only the summary itself, with no introduction, label, or commentary. "
+                    "Use one concise plain-text paragraph of at most two sentences. "
+                    "Do not use Markdown or formatting of any kind: no headings, bullet points, "
+                    "numbered lists, asterisks, bold text, links, or emojis. "
+                    "Do not begin with phrases such as 'Here is', 'Here\'s', 'Summary', or 'Overview'."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Summarize the following article. Output only the plain-text summary:\n\n{text}",
+            },
         ],
-        max_tokens=max_tokens
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
     summary = response.choices[0].message.content.strip()
     return summary
