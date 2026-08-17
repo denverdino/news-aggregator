@@ -297,6 +297,23 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywor
     return items
 
 
+def deduplicate_items(items):
+    """Keep the first news item for each URL."""
+    unique_items = []
+    seen_urls = set()
+
+    for item in items:
+        url = item.get("url", "")
+
+        if url in seen_urls:
+            continue
+
+        unique_items.append(item)
+        seen_urls.add(url)
+
+    return unique_items
+
+
 def send_html_email(subject, html_content, emails):
     # Your Gmail credentials
     gmail_user = 'test.denverdino@gmail.com'
@@ -399,6 +416,8 @@ if __name__ == "__main__":
             print(f"Fetching feed {rss_url} ...\n")
             aggregated_items += get_posts_from_feeds(
                 rss_url, current_date, delta=delta, category=category, keywords=keywords)
+
+    aggregated_items = deduplicate_items(aggregated_items)
 
     # Base HTML template before the list
     html_content = """
