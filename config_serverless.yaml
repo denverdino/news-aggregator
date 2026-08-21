@@ -7,6 +7,9 @@ hackernews:
   - Modal
   - E2B
   - Cloudflare Sandbox
+  - CubeSandbox
+  - Agent Substrate
+  - AgentENV
 
 reddit:
   - AI_Agents
