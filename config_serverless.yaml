@@ -1,0 +1,38 @@
+# Serverless compute and agent sandbox news sources.
+hackernews:
+  - Google Cloud Run
+  - AWS Lambda
+  - AWS AgentCore
+  - Amazon Bedrock AgentCore
+  - Modal
+  - E2B
+  - Cloudflare Sandbox
+
+reddit:
+  - AI_Agents
+  - serverless
+
+feeds:
+  # Google Cloud Run release notes and Google Cloud product announcements.
+  -
+    url: https://cloud.google.com/feeds/cloud-run-release-notes.xml
+  -
+    url: https://cloudblog.withgoogle.com/rss/
+    keywords: Cloud Run
+
+  # AWS Lambda and Amazon Bedrock AgentCore announcements.
+  -
+    url: https://aws.amazon.com/blogs/compute/feed/
+    keywords: Lambda
+  -
+    url: https://aws.amazon.com/blogs/machine-learning/feed/
+    keywords: AgentCore,Amazon Bedrock AgentCore
+
+  # Cloudflare product announcements mentioning Sandbox.
+  -
+    url: https://blog.cloudflare.com/rss/
+    keywords: Sandbox
+
+subject: Serverless and Agent Sandbox News
+emails:
+  - denverdino@gmail.com
