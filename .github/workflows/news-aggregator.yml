@@ -35,3 +35,4 @@ jobs:
           python3 main.py
           python3 main.py --config config_llm.yaml
           python3 main.py --config config_agent.yaml
+          python3 main.py --config config_serverless.yaml
