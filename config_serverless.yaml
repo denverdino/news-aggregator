@@ -13,9 +13,7 @@ reddit:
   - serverless
 
 feeds:
-  # Google Cloud Run release notes and Google Cloud product announcements.
-  -
-    url: https://cloud.google.com/feeds/cloud-run-release-notes.xml
+  # Google Cloud Run
   -
     url: https://cloudblog.withgoogle.com/rss/
     keywords: Cloud Run
