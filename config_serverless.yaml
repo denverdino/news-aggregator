@@ -33,7 +33,10 @@ feeds:
   -
     url: https://blog.cloudflare.com/rss/
     keywords: Sandbox
-
+  # Modal
+  -
+    url: https://modal.com/blog/atom.xml
+   
 subject: Serverless and Agent Sandbox News
 emails:
   - denverdino@gmail.com
