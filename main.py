@@ -249,14 +249,20 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywor
     for entry in feed.entries:
         post_title = entry.title
         post_link = entry.link
-        post_date = entry.get('published_parsed', None)
+        # RSS commonly exposes ``published_parsed``, while Atom feeds (such as
+        # Modal's) may only expose ``updated_parsed`` through feedparser.
+        post_date = (entry.get('published_parsed') or
+                     entry.get('updated_parsed'))
         if post_date is None:
-            post_datetime = datetime.now()
-        else:
-            post_datetime = datetime(
-                post_date.tm_year, post_date.tm_mon, post_date.tm_mday,
-                post_date.tm_hour, post_date.tm_min, post_date.tm_sec
-            )
+            logging.warning(
+                "Skipping undated feed entry '%s' from %s",
+                post_title, rss_url)
+            continue
+
+        post_datetime = datetime(
+            post_date.tm_year, post_date.tm_mon, post_date.tm_mday,
+            post_date.tm_hour, post_date.tm_min, post_date.tm_sec
+        )
 
         # Calculate the difference between the two dates
         difference = abs(current_datetime - post_datetime)
