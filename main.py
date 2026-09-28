@@ -242,7 +242,25 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
 
 
 def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywords=None, max_characters=1024):
-    feed = feedparser.parse(rss_url)
+    try:
+        # Fetch feeds with the same browser-like client used for articles and
+        # APIs. Passing a URL directly to feedparser makes it use urllib,
+        # which some providers (including Modal) reject with HTTP 403.
+        response = session.get(rss_url, timeout=20)
+        if not response.ok:
+            logging.error(
+                "HTTP %d fetching feed '%s'",
+                response.status_code, rss_url)
+            return []
+        feed = feedparser.parse(response.content)
+    except Exception as e:
+        logging.error("Error fetching feed '%s': %s", rss_url, e)
+        return []
+
+    if not feed.entries and feed.get('bozo'):
+        logging.error(
+            "Error parsing feed '%s': %s",
+            rss_url, feed.get('bozo_exception'))
 
     items = []
 
