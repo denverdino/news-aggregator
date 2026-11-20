@@ -1,11 +1,13 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from time import struct_time
 from unittest.mock import Mock, patch
 
 from feedparser import FeedParserDict
+from prawcore.exceptions import Forbidden, RequestException, ResponseException
 
-from main import deduplicate_items, get_posts_from_feeds
+import main as aggregator
+from main import deduplicate_items, fetch_posts_from_reddit, get_posts_from_feeds
 
 
 class DeduplicateItemsTest(unittest.TestCase):
@@ -40,6 +42,130 @@ class DeduplicateItemsTest(unittest.TestCase):
         ]
 
         self.assertEqual(deduplicate_items(items), items)
+
+
+class RedditFetchingTest(unittest.TestCase):
+    @staticmethod
+    def submission(**overrides):
+        return Mock(**{
+            "created_utc": datetime.now(timezone.utc).timestamp(),
+            "is_self": False,
+            "spoiler": False,
+            "over_18": False,
+            "url": "https://example.com/story",
+            "title": "Recent story",
+            **overrides,
+        })
+
+    @staticmethod
+    def listing(posts=(), error=None):
+        # PRAW performs HTTP requests lazily, including on later pages.
+        yield from posts
+        if error is not None:
+            raise error
+
+    def test_forbidden_during_iteration_does_not_abort_collection(self):
+        reddit = Mock()
+        reddit.subreddit.return_value.new.return_value = self.listing(
+            error=Forbidden(Mock(status_code=403)))
+
+        with self.assertLogs(level="WARNING") as logs:
+            items = fetch_posts_from_reddit(reddit, ["Kubernetes"])
+
+        self.assertEqual(items, [])
+        self.assertIn("Kubernetes", " ".join(logs.output))
+        self.assertIn("403", " ".join(logs.output))
+
+    def test_failed_subreddit_does_not_discard_other_subreddits(self):
+        reddit = Mock()
+        blocked, healthy = Mock(), Mock()
+        blocked.new.return_value = self.listing(
+            error=Forbidden(Mock(status_code=403)))
+        healthy.new.return_value = self.listing([self.submission()])
+        reddit.subreddit.side_effect = {"blocked": blocked, "healthy": healthy}.__getitem__
+
+        with self.assertLogs(level="WARNING"):
+            items = fetch_posts_from_reddit(reddit, ["blocked", "healthy"])
+
+        self.assertEqual(items, [{"url": "https://example.com/story", "title": "Recent story"}])
+        healthy.new.assert_called_once_with(limit=200)
+
+    def test_keeps_collected_posts_when_a_later_page_fails(self):
+        for error in (Forbidden(Mock(status_code=403)),
+                      ResponseException(Mock(status_code=503)),
+                      RequestException(OSError("network"), (), {})):
+            with self.subTest(error=type(error).__name__):
+                reddit = Mock()
+                reddit.subreddit.return_value.new.return_value = self.listing(
+                    [self.submission()], error)
+
+                with self.assertLogs(level="WARNING"):
+                    items = fetch_posts_from_reddit(reddit, ["Kubernetes"])
+
+                self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]["title"], "Recent story")
+
+    def test_preserves_post_filters(self):
+        reddit = Mock()
+        reddit.subreddit.return_value.new.return_value = self.listing([
+            self.submission(),
+            self.submission(created_utc=(datetime.now(timezone.utc) - timedelta(days=2)).timestamp()),
+            self.submission(is_self=True),
+            self.submission(spoiler=True),
+            self.submission(over_18=True),
+            self.submission(url="https://example.com/image.JPG"),
+            self.submission(url="/relative"),
+        ])
+
+        self.assertEqual(fetch_posts_from_reddit(reddit, ["Kubernetes"]), [
+            {"url": "https://example.com/story", "title": "Recent story"},
+        ])
+
+    def test_empty_subreddit_list_does_not_make_requests(self):
+        reddit = Mock()
+        self.assertEqual(fetch_posts_from_reddit(reddit, []), [])
+        reddit.subreddit.assert_not_called()
+
+    def test_unexpected_programming_errors_are_not_suppressed(self):
+        reddit = Mock()
+        reddit.subreddit.return_value.new.return_value = self.listing(
+            error=TypeError("unexpected bug"))
+        with self.assertRaises(TypeError):
+            fetch_posts_from_reddit(reddit, ["Kubernetes"])
+
+    def test_main_continues_to_feeds_and_email_after_reddit_forbidden(self):
+        reddit = Mock()
+        reddit.subreddit.return_value.new.return_value = self.listing(
+            error=Forbidden(Mock(status_code=403)))
+        config = {
+            "hackernews": ["Kubernetes"],
+            "reddit": ["Kubernetes"],
+            "feeds": [{"url": "https://example.com/feed.xml"}],
+            "emails": ["test@example.com"],
+            "subject": "Test digest",
+        }
+        hn_item = {"title": "HN story", "url": "https://example.com/hn"}
+        feed_item = {"title": "RSS story", "url": "https://example.com/rss", "summary": "RSS summary"}
+        with patch("sys.argv", ["main.py"]), \
+                patch("main.os.path.exists", return_value=True), \
+                patch("main.parse_yaml_config", return_value=config), \
+                patch("main.fetch_stories_with_keywords", return_value=[hn_item]), \
+                patch("main.generate_summary_with_cache", return_value="HN summary"), \
+                patch("main.time.sleep"), \
+                patch("main.initialize_reddit", return_value=reddit), \
+                patch("main.get_posts_from_feeds", return_value=[feed_item]) as feeds, \
+                patch("main.send_html_email") as send, \
+                patch("builtins.print"), \
+                self.assertLogs(level="WARNING"):
+            aggregator.main()
+
+        feeds.assert_called_once()
+        send.assert_called_once()
+        subject, body, recipients = send.call_args.args
+        self.assertEqual(subject, "Test digest")
+        self.assertEqual(recipients, ["test@example.com"])
+        self.assertIn("HN story", body)
+        self.assertIn("RSS story", body)
 
 
 class FeedDateFilteringTest(unittest.TestCase):

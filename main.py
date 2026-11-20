@@ -12,6 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 import praw
+from prawcore.exceptions import PrawcoreException
 import re
 import feedparser
 import yaml
@@ -215,11 +216,6 @@ def initialize_reddit():
 
 def fetch_posts_from_reddit(reddit, subreddit_names):
     results = []
-    # The subreddit you want to search in, keyword, and the time frame
-    # 'kubernetes+LocalLLaMA'
-
-    # Initialize a subreddit instance
-    subreddit = reddit.subreddit('+'.join(subreddit_names))
 
     # Calculate 24 hours ago
     one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
@@ -227,17 +223,26 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
     # Regular expression to match image file extensions
     image_pattern = re.compile(r'\.(jpg|jpeg|png|gif)$', re.IGNORECASE)
 
-    # Fetch new link posts in the last 24 hours
-    for submission in subreddit.new(limit=200):
-        post_time = datetime.fromtimestamp(
-            submission.created_utc, tz=timezone.utc)
-        if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
-            # Check if the URL is an image or a relative link
-            if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
-                results.append({
-                    "url": submission.url,
-                    "title": submission.title
-                })
+    # Query separately so one inaccessible community cannot block the others.
+    for subreddit_name in subreddit_names:
+        try:
+            subreddit = reddit.subreddit(subreddit_name)
+            # PRAW fetches pages lazily, so iteration must be inside the try.
+            for submission in subreddit.new(limit=200):
+                post_time = datetime.fromtimestamp(
+                    submission.created_utc, tz=timezone.utc)
+                if post_time > one_day_ago and not submission.is_self and not submission.spoiler and not submission.over_18:
+                    # Check if the URL is an image or a relative link
+                    if not image_pattern.search(submission.url) and not submission.url.startswith('/'):
+                        results.append({
+                            "url": submission.url,
+                            "title": submission.title
+                        })
+        except PrawcoreException as e:
+            logging.warning(
+                "Error fetching Reddit posts from r/%s: %s. "
+                "Keeping collected posts and continuing with other sources.",
+                subreddit_name, e)
     return results
 
 
@@ -363,7 +368,7 @@ def send_html_email(subject, html_content, emails):
         logging.error(f"Failed to send HTML email: {e}")
 
 
-if __name__ == "__main__":
+def main():
     exec_path = os.path.abspath(__file__)
     exec_dir = os.path.dirname(exec_path)
     # get config file path from arguments
@@ -519,3 +524,7 @@ if __name__ == "__main__":
     """
     logging.info(html_content)
     send_html_email(subject, html_content, emails)
+
+
+if __name__ == "__main__":
+    main()
