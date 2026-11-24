@@ -3,5 +3,5 @@ feedparser
 openai
 praw
 PyYAML
-Requests
+Requests[socks]
 trafilatura
