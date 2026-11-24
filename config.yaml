@@ -21,6 +21,8 @@ feeds:
   -
     url: https://www.docker.com/feed/
   -
+    url: https://blog.aks.azure.com/rss.xml
+  -
     url: https://cloudblog.withgoogle.com/rss/
     category: Containers & Kubernetes
   -
