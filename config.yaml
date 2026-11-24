@@ -15,13 +15,9 @@ feeds:
   -
     url: https://aws.amazon.com/blogs/machine-learning/category/compute/amazon-kubernetes-service/feed/
   -
-    url: https://techcommunity.microsoft.com/plugins/custom/microsoft/o365/custom-blog-rss?tid=4303776677014973685&board=AppsonAzureBlog&size=25
-  -
     url: https://blog.aks.azure.com/rss
   -
     url: https://www.docker.com/feed/
-  -
-    url: https://blog.aks.azure.com/rss.xml
   -
     url: https://cloudblog.withgoogle.com/rss/
     category: Containers & Kubernetes

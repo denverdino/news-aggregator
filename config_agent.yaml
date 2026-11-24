@@ -19,13 +19,13 @@ reddit:
 feeds:
   # Blogs and documentation sites that publish updates about agent platforms
   - 
-    url: https://www.anthropic.com/engineering
-  - 
     url: https://jimmysong.io/blog/index.xml
   - 
     url: https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_engineering.xml
   - 
     url: https://openai.com/news/rss.xml
+  -
+    url: https://openai.com/zh-Hans-CN/news/engineering/rss.xml
 subject: AI Agent News
 emails:
   # List of email addresses that should receive the daily digest (update as needed)

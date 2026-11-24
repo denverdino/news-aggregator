@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 import praw
-from prawcore.exceptions import PrawcoreException
+from prawcore.exceptions import Forbidden, PrawcoreException
 import re
 import feedparser
 import yaml
@@ -113,46 +113,55 @@ def generate_summary_with_cache(url, cache_path, max_characters=3000):
         # Read the summary from the file
         with open(summary_file_path, 'r') as file:
             summary = file.read()
-        logging.info(f"Reading summary for {url} from cache ...")
-        return summary
+        if summary.strip():
+            logging.info(f"Reading summary for {url} from cache ...")
+            return summary
 
     text = extract_content(url)
-    # Truncate text to max_characters
+    if not text.strip():
+        return ""
     text = text[:max_characters]
-    # Generate the summary
     summary = generate_summary(text)
-    # Save the summary to the file
+    if not summary.strip():
+        return ""
     with open(summary_file_path, 'w') as file:
         file.write(summary)
     return summary
 
 
 def extract_content(url):
-    text = ""
-    downloaded = None
     try:
         response = session.get(url, timeout=20)
-        if response.ok:
-            downloaded = response.text
-        else:
-            logging.warning(
-                "HTTP %d for '%s', trying trafilatura fallback",
-                response.status_code, url)
-            downloaded = trafilatura.fetch_url(url)
     except Exception as e:
-        logging.error(
-            "Error fetching content for url '%s': %s", url, e)
-        return text
+        logging.warning("Error fetching content for url '%s': %s", url, e)
+        return ""
+
+    if not response.ok:
+        logging.warning(
+            "HTTP %d for '%s'; keeping the link without a summary",
+            response.status_code, url)
+        return ""
+
+    downloaded = response.text
+    if not downloaded:
+        return ""
+
+    title_match = re.search(r"<title\b[^>]*>(.*?)</title\s*>", downloaded, re.I | re.S)
+    title = (re.sub(r"\s+", " ", html.unescape(title_match.group(1))).strip().casefold()
+             if title_match else "")
+    if response.headers.get("cf-mitigated", "").lower() == "challenge" or title in {
+        "just a moment...", "you're using a too-old browser", "access denied",
+        "attention required! | cloudflare",
+    }:
+        logging.warning(
+            "Access-block page for '%s'; keeping the link without a summary", url)
+        return ""
 
     try:
-        if downloaded:
-            result = trafilatura.extract(downloaded)
-            if result is not None:
-                text = result
+        return trafilatura.extract(downloaded) or ""
     except Exception as e:
-        logging.error(
-            "Error extracting content for url '%s': %s", url, e)
-    return text
+        logging.error("Error extracting content for url '%s': %s", url, e)
+        return ""
 
 
 def fetch_stories_with_keywords(keywords, days_ago):
@@ -239,10 +248,13 @@ def fetch_posts_from_reddit(reddit, subreddit_names):
                             "title": submission.title
                         })
         except PrawcoreException as e:
+            hint = ("Check Reddit app access and subreddit permissions; "
+                    "HTTP 403 alone does not identify the cause. "
+                    if isinstance(e, Forbidden) else "")
             logging.warning(
-                "Error fetching Reddit posts from r/%s: %s. "
+                "Error fetching Reddit posts from r/%s: %s. %s"
                 "Keeping collected posts and continuing with other sources.",
-                subreddit_name, e)
+                subreddit_name, e, hint)
     return results
 
 
@@ -253,19 +265,23 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywor
         # which some providers (including Modal) reject with HTTP 403.
         response = session.get(rss_url, timeout=20)
         if not response.ok:
-            logging.error(
+            logging.warning(
                 "HTTP %d fetching feed '%s'",
                 response.status_code, rss_url)
             return []
         feed = feedparser.parse(response.content)
     except Exception as e:
-        logging.error("Error fetching feed '%s': %s", rss_url, e)
+        logging.warning("Error fetching feed '%s': %s", rss_url, e)
         return []
 
-    if not feed.entries and feed.get('bozo'):
-        logging.error(
-            "Error parsing feed '%s': %s",
-            rss_url, feed.get('bozo_exception'))
+    if not feed.entries:
+        if feed.get('bozo'):
+            logging.warning(
+                "Error parsing feed '%s': %s",
+                rss_url, feed.get('bozo_exception'))
+        elif not feed.get('version'):
+            logging.warning("Source '%s' is not an RSS or Atom feed", rss_url)
+        return []
 
     items = []
 
@@ -300,14 +316,11 @@ def get_posts_from_feeds(rss_url, current_datetime, delta, category=None, keywor
                 continue
 
         summary = entry.get('summary', "")
-        if summary == "":
-            post_summary = ""
+        if re.search(r"<[A-Za-z][^>]*>", summary):
+            post_summary = trafilatura.html2txt(f"<html><head></head><body>{summary}</body></html>")
         else:
-            post_summary = trafilatura.extract(summary)
-            if post_summary is None:
-                post_summary = summary
-            else:
-                post_summary = post_summary[:max_characters]
+            post_summary = html.unescape(summary)
+        post_summary = post_summary[:max_characters]
 
         # Filter by keywords in the summary
         if keywords:
@@ -502,7 +515,7 @@ def main():
     # Append each news item to the HTML content, with HTML encoding
     for item in aggregated_items:
         title_encoded = html.escape(item["title"])
-        summary_encoded = item["summary"]
+        summary_encoded = html.escape(item["summary"])
         html_content += f"""
         <div class="news-item">
             <div class="news-title">
